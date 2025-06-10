@@ -155,6 +155,80 @@ get_kubernetes_info() {
     fi
 }
 
+# Function to get hardware information
+get_hardware_info() {
+    echo "=== Hardware Information ==="
+    echo "CPU Information:"
+    lscpu 2>/dev/null || sysctl -n machdep.cpu 2>/dev/null || echo "N/A"
+    echo
+    echo "GPU Information:"
+    lspci | grep -i vga 2>/dev/null || echo "N/A"
+    echo
+    echo "USB Devices:"
+    lsusb 2>/dev/null || echo "N/A"
+    echo
+}
+
+# Function to get service status
+get_service_status() {
+    echo "=== Service Status ==="
+    if command -v systemctl >/dev/null 2>&1; then
+        echo "System Services:"
+        systemctl list-units --state=failed
+        echo
+    elif command -v service >/dev/null 2>&1; then
+        echo "Service Status:"
+        service --status-all
+        echo
+    fi
+}
+
+# Function to get package manager information
+get_package_info() {
+    echo "=== Package Manager Information ==="
+    if command -v apt >/dev/null 2>&1; then
+        echo "APT Updates Available:"
+        apt list --upgradable 2>/dev/null
+        echo
+    elif command -v yum >/dev/null 2>&1; then
+        echo "YUM Updates Available:"
+        yum check-update 2>/dev/null
+        echo
+    elif command -v pacman >/dev/null 2>&1; then
+        echo "Pacman Updates Available:"
+        pacman -Qu 2>/dev/null
+        echo
+    fi
+}
+
+# Function to get security information
+get_security_info() {
+    echo "=== Security Information ==="
+    echo "Failed Login Attempts:"
+    grep "Failed password" /var/log/auth.log 2>/dev/null || grep "Failed password" /var/log/secure 2>/dev/null || echo "N/A"
+    echo
+    echo "Open Ports:"
+    netstat -tuln 2>/dev/null || ss -tuln
+    echo
+    echo "SELinux Status (if applicable):"
+    getenforce 2>/dev/null || echo "N/A"
+    echo
+}
+
+# Function to get performance metrics
+get_performance_metrics() {
+    echo "=== Performance Metrics ==="
+    echo "CPU Temperature (if available):"
+    sensors 2>/dev/null || echo "N/A"
+    echo
+    echo "IO Statistics:"
+    iostat -x 1 1 2>/dev/null || echo "N/A"
+    echo
+    echo "Network Statistics:"
+    netstat -s 2>/dev/null || ss -s
+    echo
+}
+
 # Main execution
 echo -e "${BLUE}Collecting system state information...${NC}"
 
@@ -174,6 +248,11 @@ echo -e "${BLUE}Collecting system state information...${NC}"
     get_system_logs
     get_docker_info
     get_kubernetes_info
+    get_hardware_info
+    get_service_status
+    get_package_info
+    get_security_info
+    get_performance_metrics
 
     echo "=========================================="
     echo "End of Report"
