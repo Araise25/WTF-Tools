@@ -1,153 +1,149 @@
 #!/bin/bash
 
-# Configuration
 BOOK_HIST_FILE="$HOME/.book_hist"
-VERSION="1.0.0"
+VERSION="1.0.3"
 
-# Detect current shell
+init_book() {
+    if [[ ! -f "$BOOK_HIST_FILE" ]]; then
+        touch "$BOOK_HIST_FILE"
+        echo "book: Initialized command history at $BOOK_HIST_FILE"
+    else
+        echo "book: Command history already exists at $BOOK_HIST_FILE"
+    fi
+}
+
 detect_shell() {
-    if [ -n "$ZSH_VERSION" ]; then
+    if [[ -n "$ZSH_VERSION" ]]; then
         echo "zsh"
-    elif [ -n "$BASH_VERSION" ]; then
+    elif [[ -n "$BASH_VERSION" ]]; then
         echo "bash"
     else
         echo "unknown"
     fi
 }
 
-# Initialize book history
-init_book() {
-    if [ -f "$BOOK_HIST_FILE" ]; then
-        echo "book: history file already exists at $BOOK_HIST_FILE"
-        return 1
-    fi
-
-    if touch "$BOOK_HIST_FILE"; then
-        echo "book: initialized history file at $BOOK_HIST_FILE"
-        
-        # Add to shell configuration if not already present
-        local shell_config
-        case $(detect_shell) in
-            bash) shell_config="$HOME/.bashrc" ;;
-            zsh) shell_config="$HOME/.zshrc" ;;
-            *) shell_config="" ;;
-        esac
-
-        if [ -n "$shell_config" ]; then
-            if ! grep -q "alias b=" "$shell_config"; then
-                echo "Adding book shortcut to $shell_config"
-                echo 'alias b="book"' >> "$shell_config"
-            fi
-        fi
-    else
-        echo "book: failed to create history file at $BOOK_HIST_FILE"
-        return 1
-    fi
-}
-
-# Add last command to history
 add_command() {
-    if [ ! -f "$BOOK_HIST_FILE" ]; then
-        echo "book: history file not found. Run 'book init' first."
+    if [[ ! -f "$BOOK_HIST_FILE" ]]; then
+        echo "book: History file not found. Run 'book init' first."
+        return 1
+    fi
+
+    if [[ ! -f "$HOME/.book_last_cmd" ]]; then
+        echo "book: No recent command found"
         return 1
     fi
 
     local cmd
-    # Get last command from history
-    case $(detect_shell) in
-        bash) cmd=$(history 1 | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//') ;;
-        zsh) cmd=$(history -1 | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//') ;;
-        *) cmd=$(history | tail -n 1 | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//') ;;
-    esac
+    cmd=$(<"$HOME/.book_last_cmd")
+    cmd="${cmd#"${cmd%%[![:space:]]*}"}"  # Trim leading whitespace
 
-    # Skip if empty or if it's a book command
-    if [[ -z "$cmd" ]] || [[ "$cmd" == book* ]] || [[ "$cmd" == b* ]]; then
-        echo "book: not saving book command or empty command"
-        return 1
-    fi
-
-    # Overwrite the file with just this command
-    echo "$cmd" > "$BOOK_HIST_FILE"
-    echo "book: saved command: $cmd"
-}
-
-# List saved command (only one)
-list_command() {
-    if [ ! -f "$BOOK_HIST_FILE" ]; then
-        echo "book: history file not found. Run 'book init' first."
-        return 1
-    fi
-
-    if [ ! -s "$BOOK_HIST_FILE" ]; then
-        echo "book: no command saved yet"
+    # Skip empty commands or ones starting with 'book' or 'b'
+    if [[ -z "$cmd" ]] || [[ "$cmd" == book* ]] || [[ "$cmd" == b\ * ]]; then
+        echo "book: Skipping internal or empty command"
         return 0
     fi
 
-    echo "1. $(cat "$BOOK_HIST_FILE")"
+    # Don't save if it's the same as the last saved one (avoid duplicates)
+    if [[ -s "$BOOK_HIST_FILE" ]]; then
+        local last_saved
+        last_saved=$(tail -n 1 "$BOOK_HIST_FILE")
+        if [[ "$last_saved" == "$cmd" ]]; then
+            echo "book: Skipping duplicate command"
+            return 0
+        fi
+    fi
+
+    echo "$cmd" >> "$BOOK_HIST_FILE"
+    echo "book: Saved command: $cmd"
 }
 
-# Execute the saved command
-execute_command() {
-    if [ ! -f "$BOOK_HIST_FILE" ]; then
-        echo "book: history file not found. Run 'book init' first."
+
+list_command() {
+    if [[ ! -f "$BOOK_HIST_FILE" ]]; then
+        echo "book: History file not found. Run 'book init' first."
         return 1
     fi
 
-    if [ ! -s "$BOOK_HIST_FILE" ]; then
-        echo "book: no command saved yet"
+    if [[ ! -s "$BOOK_HIST_FILE" ]]; then
+        echo "book: No commands saved yet"
+        return 0
+    fi
+
+    nl -w1 -s'. ' "$BOOK_HIST_FILE"
+}
+
+
+
+execute_command() {
+    if [[ ! -f "$BOOK_HIST_FILE" ]]; then
+        echo "book: History file not found. Run 'book init' first."
         return 1
     fi
 
     local cmd
-    cmd=$(cat "$BOOK_HIST_FILE")
+    if [[ "$1" == "run" ]]; then
+        cmd=$(tail -n 1 "$BOOK_HIST_FILE")
+    else
+        cmd=$(sed -n "${1}p" "$BOOK_HIST_FILE" || echo "")
+    fi
+
+    if [[ -z "$cmd" ]]; then
+        echo "book: Command not found"
+        return 1
+    fi
+
     echo "> $cmd"
-    eval "$cmd"
+    eval "$cmd" # Security risk, consider safer alternatives if needed
 }
 
-# Remove the saved command
 remove_command() {
-    if [ ! -f "$BOOK_HIST_FILE" ]; then
-        echo "book: history file not found. Run 'book init' first."
+    if [[ ! -f "$BOOK_HIST_FILE" ]]; then
+        echo "book: History file not found. Run 'book init' first."
         return 1
     fi
 
-    if [ ! -s "$BOOK_HIST_FILE" ]; then
-        echo "book: no command saved to remove"
+    if [[ ! -s "$BOOK_HIST_FILE" ]]; then
+        echo "book: No commands to remove"
         return 1
     fi
 
-    > "$BOOK_HIST_FILE"
-    echo "book: removed saved command"
+    sed -i "${1}d" "$BOOK_HIST_FILE" || sed -i '1d' "$BOOK_HIST_FILE"
+    echo "book: Command removed"
 }
 
-# Show help
 show_help() {
     cat <<EOF
-book v$VERSION - Last Command Manager
+book v$VERSION - Enhanced Command History Manager
 
 Usage:
-  book init                Initialize book command tracking
-  book add                 Save the last executed command
-  book list                Show the saved command
-  book run                 Execute the saved command
-  book rm                  Remove the saved command
+  book init                Initialize command tracking
+  book add                 Save last executed command
+  book list                Show saved commands with numbering
+  book <number>            Execute command with specified number
+  book run                 Execute most recently saved command
+  book rm <number>         Remove command with specified number
   book help                Show this help message
+  book version             Show version information
 
-Shortcut:
+Aliases:
   Use 'b' instead of 'book' for faster access
 
 Examples:
-  $ some-command
-  $ book add              # Saves the last command
-  $ book list             # Shows the saved command
-  $ book run              # Executes the saved command
-  $ book rm               # Removes the saved command
+  $ ls -la                  # Run a command
+  $ book add                # Save the command
+  $ book list               # Display numbered commands
+  $ book 1                  # Execute the first command
+  $ book rm 2               # Remove the second command
+  $ book run                # Execute most recent command
+
+Security Note:
+  Be cautious when executing saved commands as they may contain untrusted content.
+
 EOF
 }
 
-# Main function
 main() {
-    case $1 in
+    case "$1" in
         init)
             init_book
             ;;
@@ -157,11 +153,23 @@ main() {
         list|ls)
             list_command
             ;;
-        run|1)
-            execute_command
+        run)
+            execute_command "run"
             ;;
         rm|remove)
-            remove_command
+            if [[ -z "$2" ]]; then
+                echo "book: Usage: book rm <number>"
+                return 1
+            fi
+            remove_command "$2"
+            ;;
+        [0-9]*)
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+                execute_command "$1"
+            else
+                echo "book: Unknown command '$1'"
+                return 1
+            fi
             ;;
         help|--help|-h)
             show_help
@@ -170,15 +178,14 @@ main() {
             echo "book v$VERSION"
             ;;
         *)
-            if [ $# -eq 0 ]; then
+            if [[ $# == 0 ]]; then
                 list_command
             else
-                echo "book: unknown command '$1'. Use 'book help' for usage."
+                echo "book: Unknown command '$1'"
                 return 1
             fi
             ;;
     esac
 }
 
-# Run main function with all arguments
 main "$@"
