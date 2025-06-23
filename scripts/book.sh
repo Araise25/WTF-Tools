@@ -37,7 +37,7 @@ touch "$BOOK_FILE"
 
 # Handle subcommands
 case "$1" in
-  list)
+  ls)
     if [ ! -s "$BOOK_FILE" ]; then
         echo "No saved commands."
     else
@@ -101,7 +101,7 @@ case "$1" in
     cat <<EOF
 Usage:
   book              - Save the last executed command
-  book list         - List saved commands
+  book ls           - List saved commands
   book run <n>      - Run saved command at index <n>
   book rm <n>       - Remove saved command at index <n>
   book clear        - Clear all saved commands
